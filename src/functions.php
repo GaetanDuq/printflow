@@ -53,3 +53,20 @@ function countByStatus(array $orders, string $status): int {
     }
     return $count;
 }
+
+function nextStatus(string $current): string {
+    $flow = ['requested','design','printing','qa','completed'];
+    $i = array_search($current, $flow, true);
+    if ($i === false) return 'requested';          // fallback
+    if ($i >= count($flow) - 1) return 'completed'; // already at end
+    return $flow[$i + 1];
+}
+
+function isValidMaterial(string $m): bool {
+    return array_key_exists($m, getMaterials());
+}
+
+function isValidWeight(int $w): bool {
+    return $w > 0; // must be a positive number
+}
+
