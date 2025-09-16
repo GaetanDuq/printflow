@@ -42,10 +42,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   <label>Material:
     <select name="material">
-      <option value="PLA">PLA</option>
-      <option value="ABS">ABS</option>
-      <option value="Aluminum">Aluminum</option>
-      <option value="Titanium">Titanium</option>
+      <?php foreach (getMaterials() as $name => $multiplier): ?>
+        <option value="<?= $name ?>"><?= $name ?></option>
+      <?php endforeach; ?>
     </select>
   </label><br>
 
@@ -58,6 +57,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
 <?php if (!empty($_SESSION['orders'])): ?>
+    <h2>Dashboard</h2>
+  <p>
+    Total Orders: <?= totalOrders($_SESSION['orders']) ?> |
+    Total Revenue: <?= formatJPY(totalRevenue($_SESSION['orders'])) ?> |
+    Requested: <?= countByStatus($_SESSION['orders'], 'requested') ?> |
+    Design: <?= countByStatus($_SESSION['orders'], 'design') ?> |
+    Printing: <?= countByStatus($_SESSION['orders'], 'printing') ?> |
+    QA: <?= countByStatus($_SESSION['orders'], 'qa') ?> |
+    Completed: <?= countByStatus($_SESSION['orders'], 'completed') ?>
+  </p>
+
+  
   <h2>All Orders</h2>
   <table border="1" cellpadding="5">
     <tr>
@@ -66,8 +77,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <?php foreach ($_SESSION['orders'] as $order): ?>
       <tr>
         <td><?= $order['id'] ?></td>
-        <td><?= $order['client'] ?></td>
-        <td><?= $order['object_name'] ?></td>
+        <td><?= htmlspecialchars($order['client']) ?></td>
+        <td><?= htmlspecialchars($order['object_name']) ?></td>
         <td><?= $order['material'] ?></td>
         <td><?= $order['est_weight_g'] ?></td>
         <td><?= formatJPY($order['price_jpy']) ?></td>

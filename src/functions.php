@@ -4,22 +4,52 @@ function formatJPY($amount) {
     return '¥' . number_format($amount);
 }
 
-function estimatePrice($material, $weightGrams)
+function getMaterials(): array
 {
-  $base = 500;
-  $perGram = 8;
-  $multipliers = [
-    "PLA" => 1.0,
-    "ABS" => 1.2,
-    "Aluminum" => 2.0,
-    "Titanium" => 3.0
-  ];
+  return [
+    'PLA'=>1.0,
+    'ABS'=>1.2,
+    'Aluminum'=>2.0,
+    'Titanium'=>3.0];
+};
 
-  //checking if the material exists in the multipliers array
-  if (!isset($multipliers[$material]))
-  {
-    return null;
-  }
+function getMultiplier(string $material): ?float
+{
+    $materials = getMaterials();
+    return $materials[$material] ?? null; // return multiplier or null if not found
+}
 
-  return $base + ($perGram * $weightGrams * $multipliers[$material]);
+function estimatePrice(string $material, int $weightGrams): ?int {
+    $base = 500;
+    $perGram = 8;
+
+    $multiplier = getMultiplier($material);
+    if ($multiplier === null) {
+        return null; // invalid material
+    }
+
+    return $base + ($perGram * $weightGrams * $multiplier);
+}
+
+function totalOrders(array $orders): int {
+    // simply count how many orders are in the array
+    return count($orders);
+}
+
+function totalRevenue(array $orders): int {
+    $total = 0; // start accumulator
+    foreach ($orders as $order) {
+        $total += $order['price_jpy']; // add each order's price
+    }
+    return $total;
+}
+
+function countByStatus(array $orders, string $status): int {
+    $count = 0;
+    foreach ($orders as $order) {
+        if ($order['status'] === $status) {
+            $count++;
+        }
+    }
+    return $count;
 }
