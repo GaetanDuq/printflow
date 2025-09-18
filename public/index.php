@@ -6,7 +6,6 @@ if (!isset($_SESSION['next_id'])) $_SESSION['next_id'] = 1;
 
 require __DIR__ . '/../src/functions.php';
 
-// keep these around so the form can keep previous values
 $lastClient   = $_POST['client']   ?? '';
 $lastObject   = $_POST['object']   ?? '';
 $lastMaterial = $_POST['material'] ?? '';
