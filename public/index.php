@@ -1,156 +1,174 @@
 <?php
-session_start();
-
-if (!isset($_SESSION['orders'])) $_SESSION['orders'] = [];
-if (!isset($_SESSION['next_id'])) $_SESSION['next_id'] = 1;
+// public/index.php
 
 require __DIR__ . '/../src/functions.php';
+require __DIR__ . '/../src/db.php';
 
+// ---- sticky form values + errors ----
+$errors       = [];
 $lastClient   = $_POST['client']   ?? '';
 $lastObject   = $_POST['object']   ?? '';
 $lastMaterial = $_POST['material'] ?? '';
 $lastWeight   = $_POST['weight']   ?? '';
-$errors = [];
 
+// ---- POST actions ----
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-  // 1) ADVANCE status
+  // 1) ADVANCE
   if (isset($_POST['advance_id'])) {
     $id = (int) $_POST['advance_id'];
-    foreach ($_SESSION['orders'] as &$order) {
-      if ($order['id'] === $id) {
-        $order['status'] = nextStatus($order['status']);
-        break;
-      }
-    }
-    unset($order);
+    try { advanceOrder($id); } catch (Throwable $e) {}
 
-  // Delete order
-    } elseif (isset($_POST['delete_id'])) {
+  // 2) DELETE
+  } elseif (isset($_POST['delete_id'])) {
     $id = (int) $_POST['delete_id'];
-    $_SESSION['orders'] = array_values( // reindex after unset
-      array_filter($_SESSION['orders'], fn($o) => $o['id'] !== $id)
-    );
-    }
-    // Create order
-    elseif (isset($_POST['client'], $_POST['material'], $_POST['weight'])) {
+    try { deleteOrder($id); } catch (Throwable $e) {}
 
+  // 3) CREATE
+  } elseif (isset($_POST['client'], $_POST['material'], $_POST['weight'])) {
     $client   = trim($_POST['client'] ?? '');
     $object   = trim($_POST['object'] ?? '');
     $material = $_POST['material'] ?? '';
-    $weight   = (int)($_POST['weight'] ?? 0);
+    $weight   = (int) ($_POST['weight'] ?? 0);
 
-    // validate first
-    if (!isValidMaterial($material)) $errors[] = "Invalid material selected.";
-    if (!isValidWeight($weight))     $errors[] = "Weight must be greater than 0.";
+    if ($client === '')  { $errors[] = "Client is required."; }
+    if ($object === '')  { $errors[] = "Object name is required."; }
+    if (!isValidMaterial($material)) { $errors[] = "Invalid material selected."; }
+    if (!isValidWeight($weight))     { $errors[] = "Weight must be greater than 0."; }
 
-    // compute price (only if inputs look sane)
-    $price = estimatePrice($material, $weight);
-    if ($price === null) $errors[] = "Price could not be calculated.";
+    $price = null;
+    if (empty($errors)) {
+      $price = estimatePrice($material, $weight);
+      if ($price === null) $errors[] = "Price could not be calculated.";
+    }
 
     if (empty($errors)) {
-      $order = [
-        'id'           => $_SESSION['next_id']++,
-        // store raw values; escape later when printing
-        'client'       => $client,
-        'object_name'  => $object,
-        'material'     => $material,
-        'est_weight_g' => $weight,
-        'price_jpy'    => $price,
-        'status'       => 'requested',
-        'created_at'   => date('Y-m-d H:i:s')
-      ];
-      $_SESSION['orders'][] = $order;
-
-      // clear the sticky form values after success
-      $lastClient = $lastObject = $lastMaterial = $lastWeight = '';
+      try {
+        createOrder($client, $object, $material, $weight, $price);
+        // clear sticky values on success
+        $lastClient = $lastObject = $lastMaterial = $lastWeight = '';
+      } catch (Throwable $e) {
+        $errors[] = "Database error while creating order.";
+      }
     }
   }
 }
+
+// ---- fetch orders for render ----
+$orders = getOrders();
 ?>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PrintFlow — Orders</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body{font-family:system-ui, sans-serif; margin:16px}
+    .error{color:#b00020; margin:8px 0}
+    .badge{display:inline-block; padding:2px 6px; border-radius:6px; background:#eef; border:1px solid #ccd}
+    table{border-collapse:collapse; width:100%; max-width:1100px}
+    th,td{border:1px solid #ddd; padding:8px; text-align:left}
+    th{background:#fafafa}
+    .actions form{display:inline}
+    .hint{color:#666; font-size:12px}
+  </style>
+</head>
+<body>
+  <h1>PrintFlow — Orders</h1>
+  <p class="hint">Tip: open <a href="/board.php">/board.php</a> to view the Vue Kanban board.</p>
 
-<?php if (!empty($errors)): ?>
-  <div class="error" style="color:#b00020;">
-    <?php foreach ($errors as $e): ?>
-      <div><?= htmlspecialchars($e) ?></div>
-    <?php endforeach; ?>
-  </div>
-<?php endif; ?>
-
-
-<form method="POST" action="">
-  <label>Client Name:
-    <input type="text" name="client" value="<?= htmlspecialchars($lastClient) ?>">
-  </label><br>
-
-  <label>Object Name:
-    <input type="text" name="object" value="<?= htmlspecialchars($lastObject) ?>">
-  </label><br>
-
-  <label>Material:
-    <select name="material">
-      <?php foreach (getMaterials() as $name => $multiplier): ?>
-        <option value="<?= $name ?>" <?= ($lastMaterial === $name ? 'selected' : '') ?>>
-          <?= $name ?>
-        </option>
+  <?php if (!empty($errors)): ?>
+    <div class="error">
+      <?php foreach ($errors as $e): ?>
+        <div><?= htmlspecialchars($e) ?></div>
       <?php endforeach; ?>
-    </select>
-  </label><br>
+    </div>
+  <?php endif; ?>
 
-  <label>Weight (grams):
-    <input type="number" name="weight" value="<?= htmlspecialchars((string)$lastWeight) ?>">
-  </label><br>
+  <h2>Create Order</h2>
+  <form method="POST" action="" style="margin-bottom:16px">
+    <div>
+      <label>Client:
+        <input type="text" name="client" value="<?= htmlspecialchars($lastClient) ?>">
+      </label>
+    </div>
+    <div>
+      <label>Object Name:
+        <input type="text" name="object" value="<?= htmlspecialchars($lastObject) ?>">
+      </label>
+    </div>
+    <div>
+      <label>Material:
+        <select name="material">
+          <?php foreach (getMaterials() as $name => $multiplier): ?>
+            <option value="<?= $name ?>" <?= ($lastMaterial === $name ? 'selected' : '') ?>>
+              <?= $name ?>
+            </option>
+          <?php endforeach; ?>
+        </select>
+      </label>
+    </div>
+    <div>
+      <label>Weight (grams):
+        <input type="number" name="weight" value="<?= htmlspecialchars((string)$lastWeight) ?>">
+      </label>
+    </div>
+    <button type="submit">Create Order</button>
+  </form>
 
-  <button type="submit">Create Order</button>
-</form>
-
-
-
-<?php if (!empty($_SESSION['orders'])): ?>
+  <?php if (!empty($orders)): ?>
     <h2>Dashboard</h2>
-  <p>
-    Total Orders: <?= totalOrders($_SESSION['orders']) ?> |
-    Total Revenue: <?= formatJPY(totalRevenue($_SESSION['orders'])) ?> |
-    Requested: <?= countByStatus($_SESSION['orders'], 'requested') ?> |
-    Design: <?= countByStatus($_SESSION['orders'], 'design') ?> |
-    Printing: <?= countByStatus($_SESSION['orders'], 'printing') ?> |
-    QA: <?= countByStatus($_SESSION['orders'], 'qa') ?> |
-    Completed: <?= countByStatus($_SESSION['orders'], 'completed') ?>
-  </p>
+    <p>
+      Total Orders: <?= totalOrders($orders) ?> |
+      Total Revenue: <?= formatJPY(totalRevenue($orders)) ?> |
+      Requested: <span class="badge"><?= countByStatus($orders, 'requested') ?></span> |
+      Design: <span class="badge"><?= countByStatus($orders, 'design') ?></span> |
+      Printing: <span class="badge"><?= countByStatus($orders, 'printing') ?></span> |
+      QA: <span class="badge"><?= countByStatus($orders, 'qa') ?></span> |
+      Completed: <span class="badge"><?= countByStatus($orders, 'completed') ?></span>
+    </p>
 
-
-  <h2>All Orders</h2>
-  <table border="1" cellpadding="5">
-    <tr>
-      <th>ID</th><th>Client</th><th>Object</th><th>Material</th><th>Weight</th><th>Price</th><th>Status</th><th>Created</th><th>Actions</th>
-    </tr>
-    <?php foreach ($_SESSION['orders'] as $order): ?>
+    <h2>All Orders</h2>
+    <table>
       <tr>
-        <td><?= $order['id'] ?></td>
-        <td><?= htmlspecialchars($order['client']) ?></td>
-        <td><?= htmlspecialchars($order['object_name']) ?></td>
-        <td><?= $order['material'] ?></td>
-        <td><?= $order['est_weight_g'] ?></td>
-        <td><?= formatJPY($order['price_jpy']) ?></td>
-        <td><?= $order['status'] ?></td>
-        <td><?= $order['created_at'] ?></td>
-        <td>
-          <?php if ($order['status'] !== 'completed'): ?>
-            <form method="POST" style="display:inline">
-              <input type="hidden" name="advance_id" value="<?= $order['id'] ?>">
-              <button type="submit">Advance</button>
-            </form>
-          <?php else: ?>
-            —
-          <?php endif; ?>
-
-          <form method="POST" style="display:inline"
-              onsubmit="return confirm('Delete this order?');">
-          <input type="hidden" name="delete_id" value="<?= $order['id'] ?>">
-          <button type="submit">Delete</button>
-        </form>
-        </td>
+        <th>ID</th>
+        <th>Client</th>
+        <th>Object</th>
+        <th>Material</th>
+        <th>Weight (g)</th>
+        <th>Price</th>
+        <th>Status</th>
+        <th>Created</th>
+        <th>Actions</th>
       </tr>
-    <?php endforeach; ?>
-  </table>
-<?php endif; ?>
+      <?php foreach ($orders as $order): ?>
+        <tr>
+          <td><?= $order['id'] ?></td>
+          <td><?= htmlspecialchars($order['client']) ?></td>
+          <td><?= htmlspecialchars($order['object_name']) ?></td>
+          <td><?= $order['material'] ?></td>
+          <td><?= (int)$order['est_weight_g'] ?></td>
+          <td><?= formatJPY((int)$order['price_jpy']) ?></td>
+          <td><?= $order['status'] ?></td>
+          <td><?= $order['created_at'] ?></td>
+          <td class="actions">
+            <?php if ($order['status'] !== 'completed'): ?>
+              <form method="POST">
+                <input type="hidden" name="advance_id" value="<?= $order['id'] ?>">
+                <button type="submit">Advance</button>
+              </form>
+            <?php endif; ?>
+            <form method="POST" onsubmit="return confirm('Delete this order?');">
+              <input type="hidden" name="delete_id" value="<?= $order['id'] ?>">
+              <button type="submit">Delete</button>
+            </form>
+          </td>
+        </tr>
+      <?php endforeach; ?>
+    </table>
+  <?php else: ?>
+    <p>No orders yet. Create your first one above.</p>
+  <?php endif; ?>
+</body>
+</html>
